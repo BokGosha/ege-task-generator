@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ege-config
+  namespace: ege-generator
+data:
+  POSTGRES_DB: ege_tasks
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  LLM_GENERATION_PROVIDER: gigachat
+  LLM_VALIDATION_PROVIDER: yandexgpt
+  GIGACHAT_SCOPE: GIGACHAT_API_PERS
+  YANDEXGPT_FOLDER_ID: "b1g3kkblhrpuf87e59nu"
+  DEBUG: "false"
+  MAX_RETRIES: "3"

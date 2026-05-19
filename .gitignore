@@ -1,0 +1,55 @@
+# .gitignore
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# VSCode
+.vscode/
+
+# Logs
+*.log
+
+# Env
+.env
+
+# Node
+node_modules/
+
+# DB
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+.coverage
+htmlcov/
+
+# Misc
+*.swp
+*.tmp
+.idea/
+
+# Backend
+backend/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.env
+backend/.coverage
+backend/htmlcov/
+
+# K8s secrets (содержат реальные credentials)
+k8s/secrets.yaml
+
+# TLS-сертификаты
+infra/nginx/ssl/*.pem
+infra/nginx/ssl/*.key
+infra/nginx/ssl/*.crt

@@ -1,0 +1,988 @@
+openapi: 3.0.3
+info:
+  title: EGE Task Generation API
+  version: 1.0.0
+  description: |
+    API для генерации одного задания ЕГЭ по информатике.
+    Синхронный endpoint выполняет полный конвейер: генерация параметров,
+    вычисление эталонного ответа, LLM-формулировка, семантическая валидация,
+    сохранение результата.
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+paths:
+  /api/v1/tasks/generate:
+    post:
+      summary: Генерация одного задания ЕГЭ
+      operationId: generateTask
+      description: |
+        Синхронная генерация одного задания ЕГЭ по информатике.
+        Возвращает 200 OK с бизнес-результатом (accepted/rejected)
+        или HTTP 4xx/5xx при ошибках.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateTaskRequest'
+            examples:
+              minimal:
+                summary: Минимальный запрос (подтип по умолчанию)
+                value:
+                  task_type: 7
+              with_subtype:
+                summary: Запрос с явным подтипом
+                value:
+                  task_type: 11
+                  subtype: "default"
+      responses:
+        '200':
+          description: |
+            Бизнес-результат генерации. Статус `accepted` или `rejected`.
+            Исчерпание лимита quality-попыток = `rejected` (не 5xx).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateTaskSuccessResponse'
+              examples:
+                accepted:
+                  summary: Задание принято
+                  value:
+                    task_id: "6f1c8f4e-6d2f-4f4c-9d55-7b1a7d9a3d12"
+                    task_type: 7
+                    subtype: "default"
+                    status: "accepted"
+                    parameters:
+                      width: 1024
+                      height: 768
+                      bits_per_pixel: 24
+                    reference_answer: 2304
+                    final_wording: "Растровое изображение размером 1024×768 пикселей..."
+                    quality_profile:
+                      clarity:
+                        pass: true
+                        message: null
+                      unambiguity:
+                        pass: true
+                        message: null
+                      consistency:
+                        pass: true
+                        message: null
+                      answer_format:
+                        pass: true
+                        message: null
+                      language_correctness:
+                        pass: true
+                        message: null
+                      verdict: "accepted"
+                      diagnostic_message: "Формулировка пригодна."
+                    rejection_reasons: []
+                    iterations:
+                      - attempt_no: 1
+                        status: "accepted"
+                        quality_verdict: "accepted"
+                        failure_reason: null
+                    created_at: "2026-03-24T14:54:00Z"
+                rejected:
+                  summary: Задание отклонено после всех попыток
+                  value:
+                    task_id: "7a2d9f5b-8e3c-4a1b-bf66-8c2b8e0a4e23"
+                    task_type: 11
+                    subtype: "default"
+                    status: "rejected"
+                    parameters:
+                      alphabet_size: 256
+                      message_count: 100
+                    reference_answer: 800
+                    final_wording: "Текст последней попытки..."
+                    quality_profile:
+                      clarity:
+                        pass: true
+                        message: null
+                      unambiguity:
+                        pass: false
+                        message: "Формулировка допускает двойное толкование термина 'объём'."
+                      consistency:
+                        pass: true
+                        message: null
+                      answer_format:
+                        pass: true
+                        message: null
+                      language_correctness:
+                        pass: true
+                        message: null
+                      verdict: "rejected"
+                      diagnostic_message: "Формулировка не прошла проверку по критерию однозначности."
+                    rejection_reasons:
+                      - criterion: "unambiguity"
+                        description: "Формулировка допускает двойное толкование термина 'объём'."
+                    iterations:
+                      - attempt_no: 1
+                        status: "rejected"
+                        quality_verdict: "rejected"
+                        failure_reason: null
+                      - attempt_no: 2
+                        status: "rejected"
+                        quality_verdict: "rejected"
+                        failure_reason: null
+                      - attempt_no: 3
+                        status: "rejected"
+                        quality_verdict: "rejected"
+                        failure_reason: null
+                    created_at: "2026-03-24T15:02:00Z"
+        '400':
+          description: |
+            Доменная ошибка валидации: синтаксически корректный JSON,
+            но бизнес-значения недопустимы (неподдерживаемый task_type, некорректный subtype).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "INVALID_TASK_TYPE"
+                  message: "Тип задания 5 не поддерживается. Допустимые значения: 7, 11."
+                  details: null
+        '415':
+          description: Неподдерживаемый Content-Type (не application/json).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "UNSUPPORTED_MEDIA_TYPE"
+                  message: "Сервер принимает только application/json."
+                  details: null
+        '422':
+          description: |
+            Ошибка JSON-схемы: отсутствует обязательное поле,
+            неверный тип данных, синтаксическая ошибка JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchemaErrorResponse'
+        '500':
+          description: |
+            Внутренняя техническая ошибка конвейера генерации.
+            Включает исчерпание лимита генерации параметров, сбой LLM.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                param_exhausted:
+                  summary: Лимит генерации параметров исчерпан
+                  value:
+                    error:
+                      code: "PARAM_RETRY_EXHAUSTED"
+                      message: "Не удалось сгенерировать допустимый набор параметров за 5 попыток."
+                      details:
+                        task_id: "6f1c8f4e-6d2f-4f4c-9d55-7b1a7d9a3d12"
+                llm_failed:
+                  summary: Сбой LLM-генерации
+                  value:
+                    error:
+                      code: "LLM_GENERATION_FAILED"
+                      message: "Не удалось сгенерировать формулировку задания."
+                      details:
+                        task_id: "6f1c8f4e-6d2f-4f4c-9d55-7b1a7d9a3d12"
+        '504':
+          description: Таймаут внешнего LLM-сервиса.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "LLM_TIMEOUT"
+                  message: "Превышено время ожидания ответа от языковой модели."
+                  details:
+                    task_id: "6f1c8f4e-6d2f-4f4c-9d55-7b1a7d9a3d12"
+
+  /api/v1/tasks/history:
+    get:
+      summary: Получение истории генераций
+      operationId: getTasksHistory
+      description: |
+        Read-only timeline endpoint с пагинацией и базовыми фильтрами по истории генераций.
+        Для основного фильтруемого реестра задач используйте `GET /api/v1/tasks`.
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: page_size
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: task_type
+          required: false
+          schema:
+            type: integer
+            enum: [7, 11]
+        - in: query
+          name: subtype
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [accepted, rejected, error]
+      responses:
+        '200':
+          description: История генераций успешно получена.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskHistoryListResponse'
+              example:
+                total: 3
+                page: 1
+                page_size: 20
+                items:
+                  - task_id: "6f1c8f4e-6d2f-4f4c-9d55-7b1a7d9a3d12"
+                    task_type: 7
+                    subtype: "default"
+                    status: "accepted"
+                    total_iterations: 1
+                    created_at: "2026-03-24T14:54:00Z"
+                  - task_id: "7a2d9f5b-8e3c-4a1b-bf66-8c2b8e0a4e23"
+                    task_type: 11
+                    subtype: "default"
+                    status: "rejected"
+                    total_iterations: 3
+                    created_at: "2026-03-24T15:02:00Z"
+                  - task_id: "8b3e0a6c-9f7d-4b2c-af77-9d3c9f1b5f34"
+                    task_type: 7
+                    subtype: "default"
+                    status: "error"
+                    total_iterations: null
+                    created_at: "2026-03-24T15:10:00Z"
+        '422':
+          description: Ошибка валидации query-параметров.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchemaErrorResponse'
+
+  /api/v1/tasks/{task_id}:
+    get:
+      summary: Получение задания по идентификатору
+      operationId: getTaskById
+      parameters:
+        - in: path
+          name: task_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Полная карточка задания (структурно как ответ generate).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCardResponse'
+        '404':
+          description: Задание не найдено.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/tasks:
+    get:
+      summary: Список заданий с фильтрацией
+      operationId: listTasks
+      description: |
+        Возвращает краткие карточки списка (без полного quality_profile и без полного массива iterations).
+        Для полной карточки используйте `GET /api/v1/tasks/{task_id}`.
+        Этот endpoint является основным фильтруемым реестром задач, в отличие от timeline endpoint `GET /api/v1/tasks/history`.
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: page_size
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [accepted, rejected, error]
+        - in: query
+          name: task_type
+          required: false
+          schema:
+            type: integer
+            enum: [7, 11]
+        - in: query
+          name: created_from
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Нижняя граница created_at (включительно).
+        - in: query
+          name: created_to
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Верхняя граница created_at (включительно).
+      responses:
+        '200':
+          description: Отфильтрованный список заданий.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+        '422':
+          description: Ошибка валидации query-параметров.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchemaErrorResponse'
+
+  /api/v1/export/tasks/{task_id}:
+    get:
+      summary: Экспорт задания
+      operationId: exportTask
+      parameters:
+        - in: path
+          name: task_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: format
+          required: true
+          schema:
+            type: string
+            enum: [json, txt, pdf]
+      responses:
+        '200':
+          description: Задание экспортировано в выбранном формате (PDF = чистый лист задания, TXT = UTF-8 fixed template).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+            text/plain:
+              schema:
+                type: string
+              examples:
+                txt:
+                  summary: UTF-8 plain text по фиксированному шаблону
+                  value: |
+                    Тип задания: 7
+                    Подтип: default
+                    Статус: accepted
+                    Условие:
+                    ...
+                    Ответ:
+                    ...
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Неподдерживаемый формат экспорта.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Задание не найдено.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/statistics:
+    get:
+      summary: Получение расширенной статистики генерации
+      operationId: getStatistics
+      description: |
+        Read-only endpoint со сводной аналитикой качества и производительности генерации.
+      parameters:
+        - in: query
+          name: from
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Нижняя граница периода агрегации (включительно).
+        - in: query
+          name: to
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Верхняя граница периода агрегации (включительно).
+      responses:
+        '200':
+          description: Агрегированная статистика успешно получена.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatisticsResponse'
+              example:
+                total_tasks: 42
+                status_shares:
+                  accepted: 0.48
+                  rejected: 0.33
+                  error: 0.19
+                avg_iterations: 1.76
+                top_rejection_reasons:
+                  - criterion: "unambiguity"
+                    count: 11
+                by_task_type:
+                  - task_type: 7
+                    count: 24
+                  - task_type: 11
+                    count: 18
+                model_stats:
+                  generation:
+                    - model_name: "yandexgpt-lite"
+                      calls: 63
+                      failures: 2
+                  validation:
+                    - model_name: "gigachat-pro"
+                      calls: 59
+                      failures: 4
+                generated_at: "2026-03-24T16:10:00Z"
+        '500':
+          description: Внутренняя техническая ошибка при получении статистики.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Некорректный диапазон параметров периода (например, `from > to`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: "INVALID_DATE_RANGE"
+                  message: "Параметр from должен быть меньше или равен to."
+                  details: null
+
+components:
+  schemas:
+    GenerateTaskRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - task_type
+      properties:
+        task_type:
+          type: integer
+          enum: [7, 11]
+          description: Тип задания ЕГЭ по информатике.
+        subtype:
+          type: string
+          nullable: true
+          description: |
+            Подтип задания. Опционален.
+            Если не указан или null, используется подтип по умолчанию.
+            В MVP допустимое значение: "default".
+
+    GenerateTaskSuccessResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - task_type
+        - subtype
+        - status
+        - parameters
+        - reference_answer
+        - quality_profile
+        - rejection_reasons
+        - iterations
+        - created_at
+      properties:
+        task_id:
+          type: string
+          format: uuid
+          description: Уникальный идентификатор задания.
+        task_type:
+          type: integer
+          enum: [7, 11]
+        subtype:
+          type: string
+          description: Resolved-подтип (всегда заполнен, даже если клиент не передал).
+        status:
+          type: string
+          enum: [accepted, rejected]
+          description: Бизнес-статус. Статус error не возвращается в 200 OK.
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Структурированные параметры задания.
+        reference_answer:
+          type: integer
+          description: Эталонный ответ, вычисленный алгоритмическим ядром.
+        final_wording:
+          type: string
+          nullable: true
+          description: Итоговая текстовая формулировка задания на русском языке.
+        quality_profile:
+          $ref: '#/components/schemas/QualityProfile'
+        rejection_reasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/RejectionReason'
+          description: Причины отклонения. Пустой массив при accepted.
+        iterations:
+          type: array
+          items:
+            $ref: '#/components/schemas/IterationSummary'
+          description: История попыток генерации формулировки, отсортированная по attempt_no ASC.
+        created_at:
+          type: string
+          format: date-time
+          description: Время создания задания (ISO 8601 UTC).
+
+    TaskCardResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - task_type
+        - subtype
+        - status
+        - parameters
+        - reference_answer
+        - quality_profile
+        - rejection_reasons
+        - iterations
+        - created_at
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        task_type:
+          type: integer
+          enum: [7, 11]
+        subtype:
+          type: string
+        status:
+          type: string
+          enum: [accepted, rejected, error]
+        parameters:
+          type: object
+          additionalProperties: true
+        reference_answer:
+          type: integer
+          nullable: true
+        final_wording:
+          type: string
+          nullable: true
+        quality_profile:
+          $ref: '#/components/schemas/QualityProfile'
+          nullable: true
+        rejection_reasons:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/RejectionReason'
+        iterations:
+          type: array
+          items:
+            $ref: '#/components/schemas/IterationSummary'
+          description: История попыток генерации формулировки, отсортированная по attempt_no ASC.
+        created_at:
+          type: string
+          format: date-time
+      description: |
+        Полная карточка задания. Структурно эквивалентна ответу generate,
+        но допускает `status=error` и nullable-поля для данных,
+        недоступных в точке технического отказа.
+
+    TaskListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - task_type
+        - subtype
+        - status
+        - created_at
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        task_type:
+          type: integer
+          enum: [7, 11]
+        subtype:
+          type: string
+        status:
+          type: string
+          enum: [accepted, rejected, error]
+        reference_answer:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    TaskListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - total
+        - page
+        - page_size
+        - items
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskListItem'
+
+    TaskHistoryItem:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - task_type
+        - subtype
+        - status
+        - total_iterations
+        - created_at
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        task_type:
+          type: integer
+          enum: [7, 11]
+        subtype:
+          type: string
+        status:
+          type: string
+          enum: [accepted, rejected, error]
+        total_iterations:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 3
+        created_at:
+          type: string
+          format: date-time
+
+    TaskHistoryListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - total
+        - page
+        - page_size
+        - items
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskHistoryItem'
+
+    QualityProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - clarity
+        - unambiguity
+        - consistency
+        - answer_format
+        - language_correctness
+        - verdict
+        - diagnostic_message
+      properties:
+        clarity:
+          $ref: '#/components/schemas/CriterionResult'
+        unambiguity:
+          $ref: '#/components/schemas/CriterionResult'
+        consistency:
+          $ref: '#/components/schemas/CriterionResult'
+        answer_format:
+          $ref: '#/components/schemas/CriterionResult'
+        language_correctness:
+          $ref: '#/components/schemas/CriterionResult'
+        verdict:
+          type: string
+          enum: [accepted, rejected]
+          description: accepted только если все 5 критериев pass.
+        diagnostic_message:
+          type: string
+          nullable: true
+          description: Диагностическое описание от валидатора.
+
+    CriterionResult:
+      type: object
+      additionalProperties: false
+      required:
+        - pass
+        - message
+      properties:
+        pass:
+          type: boolean
+          description: true = критерий пройден, false = не пройден.
+        message:
+          type: string
+          nullable: true
+          description: Текстовое пояснение при fail, null при pass.
+
+    RejectionReason:
+      type: object
+      additionalProperties: false
+      required:
+        - criterion
+        - description
+      properties:
+        criterion:
+          type: string
+          enum:
+            - clarity
+            - unambiguity
+            - consistency
+            - answer_format
+            - language_correctness
+          description: Нарушенный критерий качества.
+        description:
+          type: string
+          description: Текстовое пояснение причины отклонения.
+
+    IterationSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - attempt_no
+        - status
+        - quality_verdict
+        - failure_reason
+      properties:
+        attempt_no:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: Номер попытки.
+        status:
+          type: string
+          enum: [accepted, rejected, error]
+          description: Статус итерации.
+        quality_verdict:
+          type: string
+          nullable: true
+          enum: [accepted, rejected, null]
+          description: Вердикт качества. null если валидация не выполнялась.
+        failure_reason:
+          type: string
+          nullable: true
+          description: Причина сбоя итерации. null при штатном завершении.
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Машиночитаемый код ошибки.
+              enum:
+                - INVALID_TASK_TYPE
+                - INVALID_SUBTYPE
+                - INVALID_DATE_RANGE
+                - UNSUPPORTED_MEDIA_TYPE
+                - PARAM_RETRY_EXHAUSTED
+                - LLM_GENERATION_FAILED
+                - LLM_VALIDATION_FAILED
+                - LLM_TIMEOUT
+                - UNEXPECTED_INTERNAL_ERROR
+            message:
+              type: string
+              description: Человекочитаемое описание на русском языке.
+            details:
+              type: object
+              nullable: true
+              additionalProperties: true
+              description: |
+                Дополнительные структурированные данные.
+                Содержит task_id если Task уже был создан к моменту сбоя.
+
+    SchemaErrorResponse:
+      type: object
+      additionalProperties: true
+      description: |
+        Стандартный формат ошибок валидации FastAPI/Pydantic.
+        Содержит массив detail с описанием нарушений схемы.
+
+
+    TaskTypeStatistic:
+      type: object
+      additionalProperties: false
+      required:
+        - task_type
+        - count
+      properties:
+        task_type:
+          type: integer
+          enum: [7, 11]
+        count:
+          type: integer
+          minimum: 0
+
+    RejectionReasonStatistic:
+      type: object
+      additionalProperties: false
+      required:
+        - criterion
+        - count
+      properties:
+        criterion:
+          type: string
+          enum: [clarity, unambiguity, consistency, answer_format, language_correctness, numeric_match]
+        count:
+          type: integer
+          minimum: 0
+
+    ModelUsageStatistic:
+      type: object
+      additionalProperties: false
+      required:
+        - model_name
+        - calls
+        - failures
+      properties:
+        model_name:
+          type: string
+        calls:
+          type: integer
+          minimum: 0
+        failures:
+          type: integer
+          minimum: 0
+
+    StatisticsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - total_tasks
+        - status_shares
+        - avg_iterations
+        - top_rejection_reasons
+        - by_task_type
+        - model_stats
+        - generated_at
+      properties:
+        total_tasks:
+          type: integer
+          minimum: 0
+        status_shares:
+          type: object
+          additionalProperties: false
+          required:
+            - accepted
+            - rejected
+            - error
+          properties:
+            accepted:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+            rejected:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+            error:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+        avg_iterations:
+          type: number
+          format: float
+          minimum: 0
+        top_rejection_reasons:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/RejectionReasonStatistic'
+        by_task_type:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskTypeStatistic'
+        model_stats:
+          type: object
+          additionalProperties: false
+          required:
+            - generation
+            - validation
+          properties:
+            generation:
+              type: array
+              items:
+                $ref: '#/components/schemas/ModelUsageStatistic'
+            validation:
+              type: array
+              items:
+                $ref: '#/components/schemas/ModelUsageStatistic'
+        generated_at:
+          type: string
+          format: date-time
+
