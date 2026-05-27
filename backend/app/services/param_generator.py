@@ -34,6 +34,12 @@ class ParamGeneratorService:
     ) -> tuple[dict[str, Any], str, int, str]:
         """Генерирует валидные параметры задания."""
 
+        if task_type not in _GENERATORS:
+            raise InvalidTaskTypeError(
+                f"Тип задания {task_type} не поддерживается",
+                task_id=task_id,
+            )
+
         gen_fn, validate_fn, _ = _GENERATORS[task_type]
 
         for attempt in range(1, self.MAX_PARAM_ATTEMPTS + 1):

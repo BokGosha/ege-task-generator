@@ -44,8 +44,13 @@ class TestParamAuditCreation:
             )
 
         assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
 
-        result = await db_session.execute(select(ParamGenerationAudit))
+        result = await db_session.execute(
+            select(ParamGenerationAudit)
+            .where(ParamGenerationAudit.task_id == task_id)
+            .order_by(ParamGenerationAudit.attempt_number)
+        )
         audits = result.scalars().all()
         assert len(audits) >= 1
         assert audits[0].attempt_number == 1

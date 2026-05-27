@@ -41,6 +41,7 @@ def _gen_image_size() -> tuple[dict[str, Any], str, int]:
         "width": width,
         "height": height,
         "bits_per_pixel": bits_per_pixel,
+        "image_size_kb": answer,
         "units": "KB",
     }
     return params, "image_size_kb", answer
@@ -64,6 +65,7 @@ def _gen_colors_count() -> tuple[dict[str, Any], str, int]:
         "width": width,
         "height": height,
         "image_size_kb": image_size_kb,
+        "palette_colors": palette_colors,
         "units": "colors",
     }
     return params, "palette_colors", palette_colors
@@ -88,6 +90,7 @@ def _gen_sound_self_duration() -> tuple[dict[str, Any], str, int]:
         "bit_depth": bit_depth,
         "sample_rate_hz": sample_rate_hz,
         "file_size_kb": file_size_kb,
+        "duration_sec": duration_sec,
         "units": "sec",
     }
     return params, "duration_sec", duration_sec
@@ -238,6 +241,7 @@ def _gen_sound_bit_depth() -> tuple[dict[str, Any], str, int]:
         "sample_rate_hz": sample_rate_hz,
         "bandwidth_kb_per_sec": bandwidth_kb_per_sec,
         "compression_ratio": compression_ratio,
+        "bit_depth": bit_depth,
         "units": "bits",
     }
     return params, "bit_depth", bit_depth
@@ -310,6 +314,9 @@ def is_valid_params_7(params: dict[str, Any], target_param: str, answer: int) ->
     subtype = params.get("subtype")
     if subtype not in SUBTYPES_7:
         return False, f"Неизвестный подтип: {subtype}"
+
+    if target_param not in params:
+        return False, f"target_param '{target_param}' отсутствует в params"
 
     if not isinstance(answer, int) or answer <= 0:
         return False, f"Ответ должен быть положительным целым числом, получено: {answer}"

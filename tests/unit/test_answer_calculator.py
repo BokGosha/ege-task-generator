@@ -43,8 +43,8 @@ class TestAnswerCalculatorReproducibility:
                 11,
                 "min_alphabet_size",
                 {
-                    "serial_length": 105, "nums": 65536,
-                    "memory_mb": 7, "min_alphabet_size": 16,
+                    "serial_length": 105, "nums": 300,
+                    "memory_kb": 15, "min_alphabet_size": 16,
                 },
                 "min_alphabet_size",
                 16,

@@ -41,6 +41,7 @@ def _gen_min_alphabet_size() -> tuple[dict[str, Any], str, int]:
         "serial_length": serial_length,
         "nums": nums,
         "memory_kb": memory_kb,
+        "min_alphabet_size": min_alphabet_size,
         "units": "symbols",
         "condition": "не менее",
     }
@@ -71,6 +72,7 @@ def _gen_max_serial_length() -> tuple[dict[str, Any], str, int]:
         "alphabet_size": alphabet_size,
         "nums": nums,
         "memory_kb": memory_kb,
+        "max_serial_length": max_serial_length,
         "units": "symbols",
         "condition": "не более",
         "_derived_params": ["alphabet_size", "digits", "latin_letters"],
@@ -101,6 +103,7 @@ def _gen_min_serial_length() -> tuple[dict[str, Any], str, int]:
         "alphabet_size": alphabet_size,
         "nums": nums,
         "memory_mb": memory_mb,
+        "min_serial_length": min_serial_length,
         "units": "symbols",
         "condition": "более",
         "_derived_params": ["alphabet_size", "digits"],
@@ -137,6 +140,7 @@ def _gen_max_extra_bytes() -> tuple[dict[str, Any], str, int]:
         "alphabet_size": alphabet_size,
         "nums": nums,
         "memory_kb": memory_kb,
+        "max_extra_bytes": max_extra_bytes,
         "units": "bytes",
         "condition": "не более",
         "_derived_params": ["alphabet_size", "digits", "latin_upper", "latin_lower"],
@@ -171,6 +175,9 @@ def is_valid_params_11(params: dict[str, Any], target_param: str, answer: int) -
     subtype = params.get("subtype")
     if subtype not in SUBTYPES_11:
         return False, f"Неизвестный подтип: {subtype}"
+
+    if target_param not in params:
+        return False, f"target_param '{target_param}' отсутствует в params"
 
     if not isinstance(answer, int) or answer <= 0:
         return False, f"Ответ должен быть положительным целым числом, получено: {answer}"
