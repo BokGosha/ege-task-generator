@@ -144,13 +144,15 @@ class TaskOrchestrator:
     async def _create_task_row(
             session: AsyncSession, task_type: int, subtype: Optional[str],
     ) -> Task:
-        """Создаёт начальную запись Task со status='error' — она будет
-        обновлена при accept/reject или останется error при сбое."""
+        """Создаёт начальную запись Task со status='pending' — конвейер
+        переведёт её в accepted/rejected при завершении или в error при сбое
+        (см. _mark_task_error). Если процесс упадёт между этапами, запись
+        останется в pending — это честнее, чем ложный error."""
 
         task = Task(
             task_type=task_type,
             subtype=subtype or "pending",
-            status="error",
+            status="pending",
         )
         session.add(task)
         await session.flush()

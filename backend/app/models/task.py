@@ -33,7 +33,7 @@ class Task(Base, TimestampMixin):
 
     reference_answer = Column(BigInteger, nullable=True)
 
-    status = Column(String(20), nullable=False, default="error", index=True)
+    status = Column(String(20), nullable=False, default="pending", index=True)
 
     final_wording = Column(Text, nullable=True)
 

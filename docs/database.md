@@ -22,7 +22,7 @@ Task (1) ──→ (*) TaskIteration (1) ──→ (1) TaskQuality (1) ──→
 | subtype          | varchar(64)| Подтип задания                         |
 | parameters       | JSONB      | Сгенерированные параметры              |
 | reference_answer | bigint     | Правильный ответ                       |
-| status           | varchar(20)| accepted / rejected / error            |
+| status           | varchar(20)| pending / accepted / rejected / error  |
 | final_wording    | text       | Итоговая формулировка задания          |
 | total_iterations | int        | Количество LLM-итераций                |
 | error_code       | varchar(64)| Код ошибки (при status=error)          |
